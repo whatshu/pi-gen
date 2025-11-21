@@ -7,4 +7,3 @@ SKIP_IMAGES
 .pc
 *-pc
 files/*
-stage-kernel/files/*
