@@ -101,6 +101,8 @@ run_stage(){
 	if [ ! -f SKIP ]; then
 		if [ "${CLEAN}" = "1" ]; then
 			if [ -d "${ROOTFS_DIR}" ]; then
+				# Unmount any mounted filesystems before removing
+				unmount "${ROOTFS_DIR}" || true
 				rm -rf "${ROOTFS_DIR}"
 			fi
 		fi
@@ -336,7 +338,8 @@ for EXPORT_DIR in ${EXPORT_DIRS}; do
 	STAGE_DIR=${EXPORT_CONFIG_DIR}
 	# shellcheck source=/dev/null
 	source "${EXPORT_DIR}/EXPORT_IMAGE"
-	EXPORT_ROOTFS_DIR=${WORK_DIR}/$(basename "${EXPORT_DIR}")/rootfs
+	# EXPORT_ROOTFS_DIR should point to the previous stage's rootfs (source for export)
+	EXPORT_ROOTFS_DIR=${PREV_ROOTFS_DIR}
 	run_stage
 	if [ "${USE_QEMU}" != "1" ]; then
 		if [ -e "${EXPORT_DIR}/EXPORT_NOOBS" ]; then

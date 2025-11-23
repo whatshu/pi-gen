@@ -225,6 +225,38 @@ The following environment variables are supported:
 
     If set to `1`, cloud-init and netplan will be installed and configured. This will allow you to configure your Raspberry Pi using cloud-init configuration files. The cloud-init configuration files should be placed in the bootfs or by editing the files in `stage2/04-cloud-init/files`. Cloud-init will be configured to read them on first boot.
 
+### Kernel Build Stage Configuration
+
+The `stage-kernel` allows you to include a custom kernel in your image. You can either build the kernel from source or use pre-built deb packages.
+
+ * `KERNEL_SRC` (Default: unset)
+
+   Path to the Linux kernel source directory. When set, the kernel will be compiled from source during the build process. This requires build tools (make, gcc, bc, bison, flex) to be installed on the host system.
+
+   Example: `KERNEL_SRC="/path/to/linux"`
+
+   **Note**: Do not set both `KERNEL_SRC` and `KERNEL_DEBS_DIR` at the same time.
+
+ * `KERNEL_DEBS_DIR` (Default: unset)
+
+   Path to a directory containing pre-built kernel deb packages. When set, these packages will be used instead of building from source. This is faster and doesn't require build tools on the host.
+
+   The directory should contain the kernel deb files (e.g., `linux-image-*.deb`, `linux-headers-*.deb`, `linux-libc-dev_*.deb`).
+
+   Example: `KERNEL_DEBS_DIR="/path/to/kernel-debs"`
+
+   **Note**: Do not set both `KERNEL_SRC` and `KERNEL_DEBS_DIR` at the same time.
+
+ * `KERNEL_MODEL` (Default: `pi5`)
+
+   The Raspberry Pi model to build the kernel for. Only used when building from source (`KERNEL_SRC` is set).
+
+   Supported values: `pi1`, `zero`, `pi2`, `pi3`, `pi4`, `pi400`, `cm4`, `pi5`, `cm5`
+
+   This determines the architecture and cross-compiler:
+   - `pi1`, `zero`, `pi2`, `pi3`: ARM 32-bit (armhf)
+   - `pi4`, `pi400`, `cm4`, `pi5`, `cm5`: ARM 64-bit (aarch64)
+
 A simple example for building Raspberry Pi OS:
 
 ```bash
@@ -377,6 +409,95 @@ maintenance and allows for more easy customization.
  - **Stage 5** - The Raspberry Pi OS Full image. More development
    tools, an email client, learning tools like Scratch, specialized packages
    like sonic-pi, office productivity, etc.
+
+### Custom Kernel Stage (stage-kernel)
+
+The `stage-kernel` is a custom stage that allows you to integrate a custom Linux kernel into your Raspberry Pi OS image. This stage can be added to your `STAGE_LIST` configuration.
+
+#### How stage-kernel Works
+
+The kernel stage consists of two main sub-stages:
+
+1. **00-build-kernel** - Prepares kernel deb packages
+   - If `KERNEL_SRC` is set: Compiles the kernel from source using cross-compilation
+   - If `KERNEL_DEBS_DIR` is set: Copies pre-built deb packages from the specified directory
+   - Outputs deb packages to a working directory for installation
+
+2. **01-install-kernel** - Installs the kernel into the image
+   - Copies kernel deb packages into the rootfs (`/opt/kernel-debs`)
+   - Installs the kernel image, headers, and libc-dev packages using dpkg
+   - Configures the boot firmware directory
+
+#### Build from Source vs Pre-built Packages
+
+**Building from Source** (`KERNEL_SRC`):
+- Advantages:
+  - Full control over kernel configuration
+  - Can apply custom patches
+  - Latest source code changes
+- Disadvantages:
+  - Requires build tools on host system
+  - Takes significant time (30+ minutes depending on hardware)
+  - Requires more disk space for build artifacts
+
+**Using Pre-built Packages** (`KERNEL_DEBS_DIR`):
+- Advantages:
+  - Much faster (just copies files)
+  - No build dependencies required
+  - Reproducible builds
+- Disadvantages:
+  - Requires pre-building the kernel separately
+  - Less flexible for quick kernel configuration changes
+
+#### Integration with Existing Stages
+
+The `stage-kernel` is designed to work after `stage2` and before any desktop stages. It modifies the base system by:
+
+- Installing custom kernel packages that replace the default `raspberrypi-kernel`
+- Ensuring boot configuration is compatible with the new kernel
+- Preserving all other system configurations from previous stages
+
+The stage uses `prerun.sh` to copy the rootfs from the previous stage, ensuring it doesn't interfere with other stages.
+
+#### Configuration Examples
+
+Example 1: Build kernel from source for Raspberry Pi 5
+```bash
+export STAGE_LIST="stage0 stage1 stage2 stage-kernel"
+export KERNEL_SRC="/path/to/linux"
+export KERNEL_MODEL="pi5"
+```
+
+Example 2: Use pre-built kernel packages
+```bash
+export STAGE_LIST="stage0 stage1 stage2 stage-kernel"
+export KERNEL_DEBS_DIR="/path/to/kernel-debs"
+```
+
+Example 3: Build for Raspberry Pi 4 (64-bit)
+```bash
+export STAGE_LIST="stage0 stage1 stage2 stage-kernel"
+export KERNEL_SRC="/home/user/linux"
+export KERNEL_MODEL="pi4"
+```
+
+#### Build Tools
+
+The stage includes a helper script `tools/build_kernel_debs.sh` that handles cross-compilation:
+- Automatically selects the correct architecture (arm/arm64) based on the model
+- Uses appropriate cross-compiler (arm-linux-gnueabihf- or aarch64-linux-gnu-)
+- Builds kernel deb packages using `make bindeb-pkg`
+- Generates SHA256 checksums for verification
+
+#### Files Created
+
+After the stage completes, the following files are present in the image:
+- `/opt/kernel-debs/linux-image-*.deb` - The kernel image
+- `/opt/kernel-debs/linux-headers-*.deb` - Kernel headers (optional)
+- `/opt/kernel-debs/linux-libc-dev_*.deb` - Kernel libc development files (optional)
+- `/opt/kernel-debs/*.sha256` - Checksum files for verification
+
+These can be useful for debugging or for installing the same kernel on other systems.
 
 ### Stage specification
 

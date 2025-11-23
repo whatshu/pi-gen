@@ -112,7 +112,16 @@ export -f update_issue
 
 ensure_next_loopdev() {
 	local loopdev
+	local loopmaj
+
+	# Clean up any "lost" loop devices (attached to deleted files)
+	losetup -D 2>/dev/null || true
+
 	loopdev="$(losetup -f)"
+
+	# Handle case where losetup returns "(lost)" suffix (e.g., "/dev/loop0 (lost)")
+	loopdev="${loopdev%% *}"
+
 	loopmaj="$(echo "$loopdev" | sed -E 's/.*[^0-9]*?([0-9]+)$/\1/')"
 	[[ -b "$loopdev" ]] || mknod "$loopdev" b 7 "$loopmaj"
 }
