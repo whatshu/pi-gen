@@ -57,6 +57,10 @@ CONTINUE=${CONTINUE:-0}
 PRESERVE_CONTAINER=${PRESERVE_CONTAINER:-0}
 PIGEN_DOCKER_OPTS=${PIGEN_DOCKER_OPTS:-""}
 
+# Kernel source directory mapping for stage-kernel
+KERNEL_SRC=${KERNEL_SRC:-""}
+KERNEL_DEBS_DIR=${KERNEL_DEBS_DIR:-""}
+
 if [ -z "${IMG_NAME}" ]; then
 	echo "IMG_NAME not set in 'config'" 1>&2
 	echo 1>&2
@@ -130,6 +134,38 @@ if [[ "${binfmt_misc_required}" == "1" ]]; then
   fi
 fi
 
+# Prepare kernel source/debs volume mounts
+KERNEL_VOLUME_OPTS=""
+KERNEL_ENV_OPTS=""
+
+if [ -n "${KERNEL_SRC}" ]; then
+  if [ ! -d "${KERNEL_SRC}" ]; then
+    echo "ERROR: KERNEL_SRC directory not found: ${KERNEL_SRC}" 1>&2
+    exit 1
+  fi
+  # Get absolute path
+  KERNEL_SRC=$(realpath -s "$KERNEL_SRC" || realpath "$KERNEL_SRC")
+  KERNEL_VOLUME_OPTS="--volume ${KERNEL_SRC}:/kernel-src"
+  KERNEL_ENV_OPTS="-e KERNEL_SRC=/kernel-src"
+  echo "Kernel source will be mounted: ${KERNEL_SRC} -> /kernel-src"
+fi
+
+if [ -n "${KERNEL_DEBS_DIR}" ]; then
+  if [ ! -d "${KERNEL_DEBS_DIR}" ]; then
+    echo "ERROR: KERNEL_DEBS_DIR directory not found: ${KERNEL_DEBS_DIR}" 1>&2
+    exit 1
+  fi
+  KERNEL_DEBS_DIR=$(realpath -s "$KERNEL_DEBS_DIR" || realpath "$KERNEL_DEBS_DIR")
+  KERNEL_VOLUME_OPTS="${KERNEL_VOLUME_OPTS} --volume ${KERNEL_DEBS_DIR}:/kernel-debs:ro"
+  KERNEL_ENV_OPTS="${KERNEL_ENV_OPTS} -e KERNEL_DEBS_DIR=/kernel-debs"
+  echo "Kernel debs will be mounted: ${KERNEL_DEBS_DIR} -> /kernel-debs"
+fi
+
+# Pass KERNEL_MODEL if set
+if [ -n "${KERNEL_MODEL:-}" ]; then
+  KERNEL_ENV_OPTS="${KERNEL_ENV_OPTS} -e KERNEL_MODEL=${KERNEL_MODEL}"
+fi
+
 trap 'echo "got CTRL+C... please wait 5s" && ${DOCKER} stop -t 5 ${DOCKER_CMDLINE_NAME}' SIGINT SIGTERM
 time ${DOCKER} run \
   $DOCKER_CMDLINE_PRE \
@@ -137,7 +173,9 @@ time ${DOCKER} run \
   --privileged \
   ${PIGEN_DOCKER_OPTS} \
   --volume "${CONFIG_FILE}":/config:ro \
+  ${KERNEL_VOLUME_OPTS} \
   -e "GIT_HASH=${GIT_HASH}" \
+  ${KERNEL_ENV_OPTS} \
   $DOCKER_CMDLINE_POST \
   pi-gen \
   bash -e -o pipefail -c "
