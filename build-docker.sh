@@ -212,12 +212,27 @@ time ${DOCKER} run \
 
 # Ensure that deploy/ is always owned by calling user
 echo "copying results from deploy/"
-${DOCKER} cp "${CONTAINER_NAME}":/pi-gen/deploy - | tar -xf -
+TMP_DEPLOY_DIR=$(mktemp -d)
+cleanup_tmp_deploy() {
+	rm -rf "${TMP_DEPLOY_DIR}"
+}
+trap cleanup_tmp_deploy EXIT
 
-echo "copying log from container ${CONTAINER_NAME} to deploy/"
-${DOCKER} logs --timestamps "${CONTAINER_NAME}" &>deploy/build-docker.log
+${DOCKER} cp "${CONTAINER_NAME}":/pi-gen/deploy/. "${TMP_DEPLOY_DIR}/"
+HOST_DEPLOY_DIR="${DIR}/deploy"
+mkdir -p "${HOST_DEPLOY_DIR}"
+if [ ! -w "${HOST_DEPLOY_DIR}" ]; then
+	HOST_DEPLOY_DIR="${DIR}/deploy-recovered-$(date +%Y%m%d-%H%M%S)"
+	echo "deploy/ is not writable, copying results to ${HOST_DEPLOY_DIR}"
+	mkdir -p "${HOST_DEPLOY_DIR}"
+fi
+# Sync through a temp directory so old root-owned logs do not block fresh results.
+rsync -a "${TMP_DEPLOY_DIR}/" "${HOST_DEPLOY_DIR}/"
 
-ls -lah deploy
+echo "copying log from container ${CONTAINER_NAME} to ${HOST_DEPLOY_DIR}/"
+${DOCKER} logs --timestamps "${CONTAINER_NAME}" &>"${HOST_DEPLOY_DIR}/build-docker.log"
+
+ls -lah "${HOST_DEPLOY_DIR}"
 
 # cleanup
 if [ "${PRESERVE_CONTAINER}" != "1" ]; then
