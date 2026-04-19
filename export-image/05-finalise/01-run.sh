@@ -16,63 +16,66 @@ on_chroot <<- EOF
 	fi
 	install -m 755 -o systemd-timesync -g systemd-timesync -d /var/lib/systemd/timesync
 	install -m 644 -o systemd-timesync -g systemd-timesync /dev/null /var/lib/systemd/timesync/clock
-	
-	# Set custom kernel as boot kernel (must be after update-initramfs)
-	echo "Setting custom kernel as boot kernel..."
-	KERNEL_MODEL="${KERNEL_MODEL:-pi5}"
-	case "\${KERNEL_MODEL}" in
-	  pi5|cm5) KERNEL_FILENAME="kernel_2712.img" ;;
-	  pi4|pi400|cm4) KERNEL_FILENAME="kernel8.img" ;;
-	  *) KERNEL_FILENAME="kernel8.img" ;;
-	esac
-	
-	# Find custom kernel (not the official rpi kernel)
-	CUSTOM_KERNEL=\$(ls /boot/vmlinuz-* 2>/dev/null | grep -v "rpt-rpi" | head -1)
-	if [ -n "\$CUSTOM_KERNEL" ]; then
-		KERNEL_VERSION=\$(basename "\$CUSTOM_KERNEL" | sed 's/vmlinuz-//')
-		echo "Found custom kernel: \$KERNEL_VERSION"
-		
-		# Backup official kernel
-		if [ -f "/boot/firmware/\${KERNEL_FILENAME}" ] && [ ! -f "/boot/firmware/\${KERNEL_FILENAME}.official" ]; then
-			cp "/boot/firmware/\${KERNEL_FILENAME}" "/boot/firmware/\${KERNEL_FILENAME}.official"
-			echo "Backed up official kernel"
-		fi
-		
-		# Copy custom kernel to boot
-		cp "\$CUSTOM_KERNEL" "/boot/firmware/\${KERNEL_FILENAME}"
-		echo "Copied custom kernel to /boot/firmware/\${KERNEL_FILENAME}"
-		
-		# Handle initramfs
-		CUSTOM_INITRD="/boot/initrd.img-\$KERNEL_VERSION"
-		if [ -f "\$CUSTOM_INITRD" ]; then
-			if [ "\${KERNEL_FILENAME}" = "kernel_2712.img" ]; then
-				cp "\$CUSTOM_INITRD" "/boot/firmware/initramfs_2712"
-				echo "Copied initramfs to /boot/firmware/initramfs_2712"
-			else
-				cp "\$CUSTOM_INITRD" "/boot/firmware/initramfs8"
-				echo "Copied initramfs to /boot/firmware/initramfs8"
+
+	KERNEL_METADATA="/usr/share/stage-kernel/kernel-release.env"
+	if [ -r "\${KERNEL_METADATA}" ]; then
+		# Use the exact release written by stage-kernel so we always export the intended kernel payload.
+		. "\${KERNEL_METADATA}"
+		CUSTOM_KERNEL="/boot/vmlinuz-\${KERNEL_RELEASE}"
+		CUSTOM_INITRD="/boot/initrd.img-\${KERNEL_RELEASE}"
+		CUSTOM_ASSETS="/usr/lib/linux-image-\${KERNEL_RELEASE}"
+
+		echo "Setting custom kernel as boot kernel..."
+		KERNEL_MODEL="${KERNEL_MODEL:-pi5}"
+		case "\${KERNEL_MODEL}" in
+		  pi5|cm5)
+			KERNEL_FILENAME="kernel_2712.img"
+			INITRAMFS_FILENAME="initramfs_2712"
+			;;
+		  pi4|pi400|cm4)
+			KERNEL_FILENAME="kernel8.img"
+			INITRAMFS_FILENAME="initramfs8"
+			;;
+		  *)
+			KERNEL_FILENAME="kernel8.img"
+			INITRAMFS_FILENAME="initramfs8"
+			;;
+		esac
+
+		if [ -f "\${CUSTOM_KERNEL}" ]; then
+			if [ -f "/boot/firmware/\${KERNEL_FILENAME}" ] && [ ! -f "/boot/firmware/\${KERNEL_FILENAME}.official" ]; then
+				cp "/boot/firmware/\${KERNEL_FILENAME}" "/boot/firmware/\${KERNEL_FILENAME}.official"
 			fi
-		fi
-		
-		# Update config.txt to explicitly set kernel
-		sed -i '/^kernel=/d' /boot/firmware/config.txt
-		sed -i '/^initramfs /d' /boot/firmware/config.txt
-		
-		if [ "\${KERNEL_FILENAME}" = "kernel_2712.img" ]; then
+
+			cp "\${CUSTOM_KERNEL}" "/boot/firmware/\${KERNEL_FILENAME}"
+			if [ -f "\${CUSTOM_INITRD}" ]; then
+				cp "\${CUSTOM_INITRD}" "/boot/firmware/\${INITRAMFS_FILENAME}"
+			fi
+
+			if [ -d "\${CUSTOM_ASSETS}/broadcom" ]; then
+				cp "\${CUSTOM_ASSETS}"/broadcom/*.dtb /boot/firmware/
+			fi
+			if [ -d "\${CUSTOM_ASSETS}/overlays" ]; then
+				mkdir -p /boot/firmware/overlays
+				cp "\${CUSTOM_ASSETS}"/overlays/*.dtbo /boot/firmware/overlays/
+				if [ -f "\${CUSTOM_ASSETS}/overlays/overlay_map.dtb" ]; then
+					cp "\${CUSTOM_ASSETS}/overlays/overlay_map.dtb" /boot/firmware/overlay_map.dtb
+				fi
+			fi
+
+			sed -i '/^kernel=/d' /boot/firmware/config.txt
+			sed -i '/^initramfs /d' /boot/firmware/config.txt
 			echo "kernel=\${KERNEL_FILENAME}" >> /boot/firmware/config.txt
-			if [ -f "/boot/firmware/initramfs_2712" ]; then
-				echo "initramfs initramfs_2712 followkernel" >> /boot/firmware/config.txt
+			if [ -f "/boot/firmware/\${INITRAMFS_FILENAME}" ]; then
+				echo "initramfs \${INITRAMFS_FILENAME} followkernel" >> /boot/firmware/config.txt
 			fi
+
+			echo "Custom kernel \${KERNEL_RELEASE} exported to firmware/"
 		else
-			echo "kernel=\${KERNEL_FILENAME}" >> /boot/firmware/config.txt
-			if [ -f "/boot/firmware/initramfs8" ]; then
-				echo "initramfs initramfs8 followkernel" >> /boot/firmware/config.txt
-			fi
+			echo "Custom kernel metadata found, but /boot/vmlinuz-\${KERNEL_RELEASE} is missing"
 		fi
-		
-		echo "Custom kernel configuration complete!"
 	else
-		echo "No custom kernel found, using official kernel"
+		echo "No stage-kernel metadata found, using official kernel"
 	fi
 EOF
 

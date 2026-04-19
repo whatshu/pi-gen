@@ -1,7 +1,51 @@
 #!/bin/bash -e
 
 DEBS_DIR="${STAGE_WORK_DIR}/kernel-debs"
+METADATA_FILE="${STAGE_WORK_DIR}/kernel-release.env"
 mkdir -p "${DEBS_DIR}"
+
+KERNEL_MODEL="${KERNEL_MODEL:-pi5}"
+KERNEL_LLVM="${KERNEL_LLVM:-1}"
+
+case "${KERNEL_MODEL}" in
+  pi1|zero)
+    DEFAULT_DEFCONFIG="bcmrpi_defconfig"
+    ;;
+  pi2|pi3)
+    DEFAULT_DEFCONFIG="bcm2709_defconfig"
+    ;;
+  pi4|pi400|cm4)
+    DEFAULT_DEFCONFIG="bcm2711_defconfig"
+    ;;
+  pi5|cm5)
+    DEFAULT_DEFCONFIG="bcm2712_defconfig"
+    ;;
+  *)
+    echo "ERROR: Unsupported KERNEL_MODEL: ${KERNEL_MODEL}"
+    exit 1
+    ;;
+esac
+
+KERNEL_DEFCONFIG="${KERNEL_DEFCONFIG:-${DEFAULT_DEFCONFIG}}"
+if [[ -z "${KERNEL_CONFIG_FRAGMENTS:-}" ]] && [[ "${KERNEL_MODEL}" =~ ^(pi5|cm5)$ ]]; then
+  KERNEL_CONFIG_FRAGMENTS="${STAGE_DIR}/configs/pi5-network-tuning.conf"
+fi
+if [[ -n "${KERNEL_CONFIG_FRAGMENTS:-}" ]]; then
+  # Resolve relative fragment paths before the helper switches into the kernel tree.
+  RESOLVED_CONFIG_FRAGMENTS=()
+  for fragment in ${KERNEL_CONFIG_FRAGMENTS}; do
+    if [[ "${fragment}" = /* ]]; then
+      RESOLVED_CONFIG_FRAGMENTS+=("${fragment}")
+    elif [[ -n "${BASE_DIR:-}" && -e "${BASE_DIR}/${fragment}" ]]; then
+      RESOLVED_CONFIG_FRAGMENTS+=("${BASE_DIR}/${fragment}")
+    elif [[ -e "${STAGE_DIR}/${fragment}" ]]; then
+      RESOLVED_CONFIG_FRAGMENTS+=("${STAGE_DIR}/${fragment}")
+    else
+      RESOLVED_CONFIG_FRAGMENTS+=("${fragment}")
+    fi
+  done
+  KERNEL_CONFIG_FRAGMENTS="${RESOLVED_CONFIG_FRAGMENTS[*]}"
+fi
 
 # Determine which mode to use: build from source or use pre-built debs
 if [[ -n "${KERNEL_DEBS_DIR:-}" ]] && [[ -n "${KERNEL_SRC:-}" ]]; then
@@ -37,34 +81,27 @@ fi
 # Mode 2: Build kernel from source
 if [[ -n "${KERNEL_SRC:-}" ]]; then
   echo "Building kernel from source: ${KERNEL_SRC}"
-  
-  # Check for required build tools on host
-  for tool in make gcc bc bison flex; do
-    if ! command -v "$tool" &>/dev/null; then
-      echo "ERROR: Required tool '$tool' not found on host system"
-      exit 1
-    fi
-  done
-  
-  KERNEL_MODEL="${KERNEL_MODEL:-pi5}"
   BUILD_SCRIPT="${STAGE_DIR}/tools/build_kernel_debs.sh"
-  
+
   if [[ ! -d "${KERNEL_SRC}" ]]; then
     echo "ERROR: KERNEL_SRC not found: ${KERNEL_SRC}"
     exit 1
   fi
-  
+
   if [[ ! -x "${BUILD_SCRIPT}" ]]; then
     echo "ERROR: Build script not found: ${BUILD_SCRIPT}"
     exit 1
   fi
-  
+
   rm -f "${DEBS_DIR}"/*.deb "${DEBS_DIR}"/*.sha256
-  
+
   "${BUILD_SCRIPT}" \
     --src "${KERNEL_SRC}" \
     --out "${DEBS_DIR}" \
-    --model "${KERNEL_MODEL}"
+    --model "${KERNEL_MODEL}" \
+    --defconfig "${KERNEL_DEFCONFIG}" \
+    --config-fragments "${KERNEL_CONFIG_FRAGMENTS:-}" \
+    --llvm "${KERNEL_LLVM}"
 fi
 
 # Verify that we have deb packages
@@ -74,5 +111,18 @@ if ! compgen -G "${DEBS_DIR}/*.deb" >/dev/null; then
   exit 1
 fi
 
-echo "Kernel deb packages ready in ${DEBS_DIR}"
+KERNEL_IMAGE_DEB="$(ls -t "${DEBS_DIR}"/linux-image-*.deb 2>/dev/null | head -1)"
+if [[ -z "${KERNEL_IMAGE_DEB}" ]]; then
+  echo "ERROR: Missing linux-image package in ${DEBS_DIR}"
+  exit 1
+fi
 
+KERNEL_IMAGE_PACKAGE="$(dpkg-deb -f "${KERNEL_IMAGE_DEB}" Package)"
+KERNEL_RELEASE="${KERNEL_IMAGE_PACKAGE#linux-image-}"
+cat > "${METADATA_FILE}" <<EOF
+KERNEL_RELEASE=${KERNEL_RELEASE}
+KERNEL_IMAGE_PACKAGE=${KERNEL_IMAGE_PACKAGE}
+EOF
+
+echo "Kernel deb packages ready in ${DEBS_DIR}"
+echo "Kernel release metadata written to ${METADATA_FILE}"

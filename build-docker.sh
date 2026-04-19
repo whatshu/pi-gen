@@ -86,7 +86,15 @@ fi
 # Modify original build-options to allow config file to be mounted in the docker container
 BUILD_OPTS="$(echo "${BUILD_OPTS:-}" | sed -E 's@\-c\s?([^ ]+)@-c /config@')"
 
-${DOCKER} build --build-arg BASE_IMAGE=debian:trixie -t pi-gen "${DIR}"
+DOCKER_BUILD_ARGS="--build-arg BASE_IMAGE=debian:trixie"
+for proxy_var in http_proxy https_proxy no_proxy HTTP_PROXY HTTPS_PROXY NO_PROXY
+do
+  if [ -n "${!proxy_var:-}" ]; then
+    DOCKER_BUILD_ARGS="${DOCKER_BUILD_ARGS} --build-arg ${proxy_var}=${!proxy_var}"
+  fi
+done
+
+${DOCKER} build ${DOCKER_BUILD_ARGS} -t pi-gen "${DIR}"
 
 if [ "${CONTAINER_EXISTS}" != "" ]; then
   DOCKER_CMDLINE_NAME="${CONTAINER_NAME}_cont"
@@ -165,6 +173,21 @@ fi
 if [ -n "${KERNEL_MODEL:-}" ]; then
   KERNEL_ENV_OPTS="${KERNEL_ENV_OPTS} -e KERNEL_MODEL=${KERNEL_MODEL}"
 fi
+if [ -n "${KERNEL_DEFCONFIG:-}" ]; then
+  KERNEL_ENV_OPTS="${KERNEL_ENV_OPTS} -e KERNEL_DEFCONFIG=${KERNEL_DEFCONFIG}"
+fi
+if [ -n "${KERNEL_LLVM:-}" ]; then
+  KERNEL_ENV_OPTS="${KERNEL_ENV_OPTS} -e KERNEL_LLVM=${KERNEL_LLVM}"
+fi
+if [ -n "${KERNEL_CONFIG_FRAGMENTS:-}" ]; then
+  KERNEL_ENV_OPTS="${KERNEL_ENV_OPTS} -e KERNEL_CONFIG_FRAGMENTS=$(printf '%q' "${KERNEL_CONFIG_FRAGMENTS}")"
+fi
+for proxy_var in http_proxy https_proxy no_proxy HTTP_PROXY HTTPS_PROXY NO_PROXY
+do
+  if [ -n "${!proxy_var:-}" ]; then
+    KERNEL_ENV_OPTS="${KERNEL_ENV_OPTS} -e ${proxy_var}=$(printf '%q' "${!proxy_var}")"
+  fi
+done
 
 trap 'echo "got CTRL+C... please wait 5s" && ${DOCKER} stop -t 5 ${DOCKER_CMDLINE_NAME}' SIGINT SIGTERM
 time ${DOCKER} run \
