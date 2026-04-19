@@ -6,7 +6,27 @@ OUT=""
 MODEL="pi4"
 DEFCONFIG=""
 CONFIG_FRAGMENTS=""
+CONFIG_FILE=""
+CONFIG_MODE="fragment"
 KERNEL_LLVM="1"
+STAMP_FILE=""
+ORIGINAL_CONFIG_BACKUP=""
+REMOVE_GENERATED_CONFIG="0"
+
+cleanup() {
+  if [[ -n "${ORIGINAL_CONFIG_BACKUP}" && -f "${ORIGINAL_CONFIG_BACKUP}" ]]; then
+    cp -f "${ORIGINAL_CONFIG_BACKUP}" "${SRC}/.config"
+    rm -f "${ORIGINAL_CONFIG_BACKUP}"
+  elif [[ "${REMOVE_GENERATED_CONFIG}" == "1" ]]; then
+    rm -f "${SRC}/.config"
+  fi
+
+  if [[ -n "${STAMP_FILE}" && -f "${STAMP_FILE}" ]]; then
+    rm -f "${STAMP_FILE}"
+  fi
+}
+
+trap cleanup EXIT
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -15,6 +35,8 @@ while [[ $# -gt 0 ]]; do
     -m|--model) MODEL="$2"; shift 2;;
     -d|--defconfig) DEFCONFIG="$2"; shift 2;;
     -c|--config-fragments) CONFIG_FRAGMENTS="$2"; shift 2;;
+    -f|--config-file) CONFIG_FILE="$2"; shift 2;;
+    --config-mode) CONFIG_MODE="$2"; shift 2;;
     -l|--llvm) KERNEL_LLVM="$2"; shift 2;;
     *) echo "Unknown arg: $1"; exit 1;;
   esac
@@ -72,27 +94,53 @@ if [[ -z "${RUST_LIB_SRC:-}" ]] && command -v rustc >/dev/null 2>&1; then
   fi
 fi
 
-echo "Generating base config from ${DEFCONFIG}"
-make "${MAKE_ARGS[@]}" "${DEFCONFIG}"
-
-if [[ -n "${CONFIG_FRAGMENTS}" ]]; then
-  for fragment in ${CONFIG_FRAGMENTS}; do
-    [[ -f "${fragment}" ]] || { echo "ERROR: config fragment not found: ${fragment}"; exit 1; }
-  done
-
-  # Always rebuild from defconfig + fragments so the stage remains reproducible across reruns.
-  # shellcheck disable=SC2086
-  "${SRC}/scripts/kconfig/merge_config.sh" -m .config ${CONFIG_FRAGMENTS}
+if [[ -f .config ]]; then
+  ORIGINAL_CONFIG_BACKUP="$(mktemp "${SRC}/.config.stage-kernel.XXXXXX")"
+  cp -f .config "${ORIGINAL_CONFIG_BACKUP}"
+else
+  REMOVE_GENERATED_CONFIG="1"
 fi
 
-make "${MAKE_ARGS[@]}" olddefconfig
+case "${CONFIG_MODE}" in
+  fragment)
+    echo "Generating base config from ${DEFCONFIG}"
+    make "${MAKE_ARGS[@]}" "${DEFCONFIG}"
+
+    if [[ -n "${CONFIG_FRAGMENTS}" ]]; then
+      for fragment in ${CONFIG_FRAGMENTS}; do
+        [[ -f "${fragment}" ]] || { echo "ERROR: config fragment not found: ${fragment}"; exit 1; }
+      done
+
+      # Always rebuild from defconfig + fragments so the stage remains reproducible across reruns.
+      # shellcheck disable=SC2086
+      "${SRC}/scripts/kconfig/merge_config.sh" -m .config ${CONFIG_FRAGMENTS}
+    fi
+
+    make "${MAKE_ARGS[@]}" olddefconfig
+    ;;
+  config-file)
+    [[ -f "${CONFIG_FILE}" ]] || { echo "ERROR: --config-file not found: ${CONFIG_FILE}"; exit 1; }
+    echo "Applying full kernel config from ${CONFIG_FILE}"
+    cp -f "${CONFIG_FILE}" .config
+    make "${MAKE_ARGS[@]}" olddefconfig
+    ;;
+  current-config)
+    [[ -f .config ]] || { echo "ERROR: ${SRC}/.config not found for current-config mode"; exit 1; }
+    echo "Using existing source tree .config without replacing it"
+    ;;
+  *)
+    echo "ERROR: Unknown config mode: ${CONFIG_MODE}"
+    echo "Supported: fragment, config-file, current-config"
+    exit 1
+    ;;
+esac
+
 make "${MAKE_ARGS[@]}" -j"$JOBS" DPKG_FLAGS="-d" bindeb-pkg
 
 popd >/dev/null
 
 PARENT_DIR="$(dirname "$(readlink -f "$SRC")")"
 mapfile -t DEBS < <(find "$PARENT_DIR" -maxdepth 1 -type f -name '*.deb' -newer "$STAMP_FILE" -printf '%f\n' | sort)
-rm -f "$STAMP_FILE"
 if [[ "${#DEBS[@]}" -eq 0 ]]; then
   echo "ERROR: No debs produced."
   exit 1

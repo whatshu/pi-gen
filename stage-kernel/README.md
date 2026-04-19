@@ -9,26 +9,60 @@
 
 ## Configuration
 
+- `KERNEL_STAGE_MODE`
+  Selects the stage-kernel input mode. Supported values are `fragment`, `config-file`, `current-config`, and `deb-files`.
 - `KERNEL_SRC`
-  Build a kernel from source inside the `pi-gen` container. This is the preferred path when iterating on config fragments.
+  Build a kernel from source inside the `pi-gen` container. Required for `fragment`, `config-file`, and `current-config` modes.
 - `KERNEL_DEBS_DIR`
-  Reuse prebuilt kernel packages instead of compiling during `stage-kernel`.
+  Reuse prebuilt kernel packages from a directory instead of compiling during `stage-kernel`. Accepted by `deb-files` mode.
+- `KERNEL_DEB_FILES`
+  Space-separated list of specific kernel `.deb` files. This is the most direct way to install a custom kernel without cloning the `linux/` tree.
 - `KERNEL_MODEL`
   Selects the Raspberry Pi family defaults. `pi5` and `cm5` default to `bcm2712_defconfig`.
 - `KERNEL_DEFCONFIG`
   Optional override for the base defconfig used before fragment merge.
 - `KERNEL_CONFIG_FRAGMENTS`
-  Space-separated list of config fragments. Absolute paths are used as-is; relative paths are resolved from the `pi-gen` checkout before the stage enters the kernel source tree. If unset for `pi5/cm5`, the stage defaults to [`configs/pi5-network-tuning.conf`](./configs/pi5-network-tuning.conf).
+  Space-separated list of config fragments for `fragment` mode. Absolute paths are used as-is; relative paths are resolved from the `pi-gen` checkout before the stage enters the kernel source tree. If unset for `pi5/cm5`, the stage defaults to [`configs/pi5-network-tuning.conf`](./configs/pi5-network-tuning.conf).
+- `KERNEL_CONFIG_FILE`
+  Full kernel config file to apply before the build starts in `config-file` mode. Relative paths are resolved from the `pi-gen` checkout.
 - `KERNEL_LLVM`
   Set to `1` by default so the build matches the modern Raspberry Pi kernel toolchain and Rust-capable configs.
 
-Example:
+## Mode Examples
+
+`fragment` mode keeps the current reproducible flow of `defconfig + fragment merge`:
 
 ```bash
 export STAGE_LIST="stage0 stage1 stage2 stage-kernel"
+export KERNEL_STAGE_MODE="fragment"
 export KERNEL_SRC="/home/whatshu/develop/project/raspi/linux"
 export KERNEL_MODEL="pi5"
 export KERNEL_CONFIG_FRAGMENTS="stage-kernel/configs/pi5-network-tuning.conf"
+```
+
+`config-file` mode copies in a full `.config` file just before compilation:
+
+```bash
+export STAGE_LIST="stage0 stage1 stage2 stage-kernel"
+export KERNEL_STAGE_MODE="config-file"
+export KERNEL_SRC="/home/whatshu/develop/project/raspi/linux"
+export KERNEL_CONFIG_FILE="/home/whatshu/develop/project/raspi/configs/pi5-debug.config"
+```
+
+`current-config` mode compiles the existing `${KERNEL_SRC}/.config` without replacing it:
+
+```bash
+export STAGE_LIST="stage0 stage1 stage2 stage-kernel"
+export KERNEL_STAGE_MODE="current-config"
+export KERNEL_SRC="/home/whatshu/develop/project/raspi/linux"
+```
+
+`deb-files` mode installs already-built packages and skips the source tree entirely:
+
+```bash
+export STAGE_LIST="stage0 stage1 stage2 stage-kernel"
+export KERNEL_STAGE_MODE="deb-files"
+export KERNEL_DEB_FILES="/path/linux-image-custom.deb /path/linux-headers-custom.deb /path/linux-libc-dev_custom.deb"
 ```
 
 ## Docker Workflow

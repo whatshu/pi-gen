@@ -60,6 +60,8 @@ PIGEN_DOCKER_OPTS=${PIGEN_DOCKER_OPTS:-""}
 # Kernel source directory mapping for stage-kernel
 KERNEL_SRC=${KERNEL_SRC:-""}
 KERNEL_DEBS_DIR=${KERNEL_DEBS_DIR:-""}
+KERNEL_CONFIG_FILE=${KERNEL_CONFIG_FILE:-""}
+KERNEL_DEB_FILES=${KERNEL_DEB_FILES:-""}
 
 if [ -z "${IMG_NAME}" ]; then
 	echo "IMG_NAME not set in 'config'" 1>&2
@@ -169,7 +171,43 @@ if [ -n "${KERNEL_DEBS_DIR}" ]; then
   echo "Kernel debs will be mounted: ${KERNEL_DEBS_DIR} -> /kernel-debs"
 fi
 
+if [ -n "${KERNEL_CONFIG_FILE}" ]; then
+  if [ -f "${KERNEL_CONFIG_FILE}" ]; then
+    KERNEL_CONFIG_FILE=$(realpath -s "$KERNEL_CONFIG_FILE" || realpath "$KERNEL_CONFIG_FILE")
+    KERNEL_CONFIG_CONTAINER_PATH="/kernel-config-file/$(basename "${KERNEL_CONFIG_FILE}")"
+    KERNEL_VOLUME_OPTS="${KERNEL_VOLUME_OPTS} --volume ${KERNEL_CONFIG_FILE}:${KERNEL_CONFIG_CONTAINER_PATH}:ro"
+    KERNEL_ENV_OPTS="${KERNEL_ENV_OPTS} -e KERNEL_CONFIG_FILE=${KERNEL_CONFIG_CONTAINER_PATH}"
+    echo "Kernel config file will be mounted: ${KERNEL_CONFIG_FILE} -> ${KERNEL_CONFIG_CONTAINER_PATH}"
+  else
+    KERNEL_ENV_OPTS="${KERNEL_ENV_OPTS} -e KERNEL_CONFIG_FILE=$(printf '%q' "${KERNEL_CONFIG_FILE}")"
+  fi
+fi
+
+if [ -n "${KERNEL_DEB_FILES}" ]; then
+  KERNEL_DEB_FILES_IN_CONTAINER=""
+  deb_index=0
+  for deb_file in ${KERNEL_DEB_FILES}; do
+    if [ -f "${deb_file}" ]; then
+      deb_file=$(realpath -s "$deb_file" || realpath "$deb_file")
+      deb_index=$((deb_index + 1))
+      deb_container_path="/kernel-deb-files/${deb_index}-$(basename "${deb_file}")"
+      KERNEL_VOLUME_OPTS="${KERNEL_VOLUME_OPTS} --volume ${deb_file}:${deb_container_path}:ro"
+      echo "Kernel deb file will be mounted: ${deb_file} -> ${deb_container_path}"
+    else
+      deb_container_path="${deb_file}"
+    fi
+    if [ -n "${KERNEL_DEB_FILES_IN_CONTAINER}" ]; then
+      KERNEL_DEB_FILES_IN_CONTAINER="${KERNEL_DEB_FILES_IN_CONTAINER} "
+    fi
+    KERNEL_DEB_FILES_IN_CONTAINER="${KERNEL_DEB_FILES_IN_CONTAINER}${deb_container_path}"
+  done
+  KERNEL_ENV_OPTS="${KERNEL_ENV_OPTS} -e KERNEL_DEB_FILES=$(printf '%q' "${KERNEL_DEB_FILES_IN_CONTAINER}")"
+fi
+
 # Pass KERNEL_MODEL if set
+if [ -n "${KERNEL_STAGE_MODE:-}" ]; then
+  KERNEL_ENV_OPTS="${KERNEL_ENV_OPTS} -e KERNEL_STAGE_MODE=${KERNEL_STAGE_MODE}"
+fi
 if [ -n "${KERNEL_MODEL:-}" ]; then
   KERNEL_ENV_OPTS="${KERNEL_ENV_OPTS} -e KERNEL_MODEL=${KERNEL_MODEL}"
 fi

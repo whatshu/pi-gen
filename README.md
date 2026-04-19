@@ -227,39 +227,53 @@ The following environment variables are supported:
 
 ### Kernel Build Stage Configuration
 
-The `stage-kernel` allows you to include a custom kernel in your image. Use it either with `KERNEL_SRC` to build from source inside the `pi-gen` container, or with `KERNEL_DEBS_DIR` to reuse pre-built packages.
+The `stage-kernel` allows you to include a custom kernel in your image. The recommended entrypoint is `KERNEL_STAGE_MODE`, which lets you select whether the stage builds from fragments, applies a full config file, preserves the source tree's current `.config`, or reuses pre-built `.deb` packages.
+
+ * `KERNEL_STAGE_MODE` (Default: inferred from the other kernel variables)
+
+   Supported values:
+   * `fragment` to start from `KERNEL_DEFCONFIG` and merge `KERNEL_CONFIG_FRAGMENTS`
+   * `config-file` to copy `KERNEL_CONFIG_FILE` into the source tree before the build
+   * `current-config` to compile the existing `${KERNEL_SRC}/.config` without replacing it
+   * `deb-files` to install pre-built kernel packages instead of compiling
 
  * `KERNEL_SRC` (Default: unset)
 
-   Path to the Linux kernel source directory. When set, the kernel will be compiled during `stage-kernel`.
+   Path to the Linux kernel source directory. Required by the `fragment`, `config-file`, and `current-config` modes.
 
    Example: `KERNEL_SRC="/path/to/linux"`
 
-   **Note**: Do not set both `KERNEL_SRC` and `KERNEL_DEBS_DIR` at the same time.
-
  * `KERNEL_DEBS_DIR` (Default: unset)
 
-   Path to a directory containing pre-built kernel deb packages. When set, these packages will be used instead of building from source. This is faster and doesn't require build tools on the host.
+   Path to a directory containing pre-built kernel deb packages. This is accepted by `deb-files` mode and is useful when the packages already live in one directory.
 
    The directory should contain the kernel deb files (e.g., `linux-image-*.deb`, `linux-headers-*.deb`, `linux-libc-dev_*.deb`).
 
    Example: `KERNEL_DEBS_DIR="/path/to/kernel-debs"`
 
-   **Note**: Do not set both `KERNEL_SRC` and `KERNEL_DEBS_DIR` at the same time.
+ * `KERNEL_DEB_FILES` (Default: unset)
+
+   Space-separated list of specific kernel deb files. This allows you to install a custom kernel without cloning the `linux/` source tree.
+
+   Example: `KERNEL_DEB_FILES="/path/linux-image-custom.deb /path/linux-headers-custom.deb /path/linux-libc-dev_custom.deb"`
 
  * `KERNEL_MODEL` (Default: `pi5`)
 
-   The Raspberry Pi model to build the kernel for. Only used when building from source (`KERNEL_SRC` is set), and used again during export to choose the correct firmware kernel filename.
+   The Raspberry Pi model to build the kernel for. Used by the source-build modes and again during export to choose the correct firmware kernel filename.
 
    Supported values: `pi1`, `zero`, `pi2`, `pi3`, `pi4`, `pi400`, `cm4`, `pi5`, `cm5`
 
  * `KERNEL_DEFCONFIG` (Default: derived from `KERNEL_MODEL`)
 
-   Optional override for the base defconfig used before fragment merge.
+   Optional override for the base defconfig used by `fragment` mode.
 
  * `KERNEL_CONFIG_FRAGMENTS` (Default: Pi 5/CM5 uses `stage-kernel/configs/pi5-network-tuning.conf`)
 
-   Space-separated list of kernel config fragments to merge on top of the base defconfig.
+   Space-separated list of kernel config fragments to merge on top of the base defconfig in `fragment` mode.
+
+ * `KERNEL_CONFIG_FILE` (Default: unset)
+
+   Full kernel config file to apply before the build begins in `config-file` mode.
 
  * `KERNEL_LLVM` (Default: `1`)
 
