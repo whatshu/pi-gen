@@ -5,6 +5,7 @@ SRC=""
 OUT=""
 MODEL="pi4"
 DEFCONFIG=""
+CONFIG_FEATURES=""
 CONFIG_FRAGMENTS=""
 CONFIG_FILE=""
 CONFIG_MODE="fragment"
@@ -34,6 +35,7 @@ while [[ $# -gt 0 ]]; do
     -o|--out) OUT="$2"; shift 2;;
     -m|--model) MODEL="$2"; shift 2;;
     -d|--defconfig) DEFCONFIG="$2"; shift 2;;
+    --config-features) CONFIG_FEATURES="$2"; shift 2;;
     -c|--config-fragments) CONFIG_FRAGMENTS="$2"; shift 2;;
     -f|--config-file) CONFIG_FILE="$2"; shift 2;;
     --config-mode) CONFIG_MODE="$2"; shift 2;;
@@ -103,12 +105,20 @@ fi
 
 case "${CONFIG_MODE}" in
   fragment)
+    # When CONFIG_FRAGMENTS is not explicitly provided, fall back to the
+    # feature list so the caller can control features at a higher level.
+    if [[ -z "${CONFIG_FRAGMENTS}" && -n "${CONFIG_FEATURES}" ]]; then
+      CONFIG_FRAGMENTS="${CONFIG_FEATURES}"
+    fi
+
     echo "Generating base config from ${DEFCONFIG}"
     make "${MAKE_ARGS[@]}" "${DEFCONFIG}"
 
     if [[ -n "${CONFIG_FRAGMENTS}" ]]; then
+      echo "Config fragments to merge:"
       for fragment in ${CONFIG_FRAGMENTS}; do
         [[ -f "${fragment}" ]] || { echo "ERROR: config fragment not found: ${fragment}"; exit 1; }
+        echo "  ${fragment}"
       done
 
       # Always rebuild from defconfig + fragments so the stage remains reproducible across reruns.

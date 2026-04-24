@@ -60,8 +60,15 @@ if [[ -z "${KERNEL_STAGE_MODE}" ]]; then
   fi
 fi
 
-if [[ "${KERNEL_STAGE_MODE}" == "fragment" ]] && [[ -z "${KERNEL_CONFIG_FRAGMENTS:-}" ]] && [[ "${KERNEL_MODEL}" =~ ^(pi5|cm5)$ ]]; then
-  KERNEL_CONFIG_FRAGMENTS="${STAGE_DIR}/configs/pi5-network-tuning.conf"
+# ── Config feature list ──────────────────────────────────────────────
+# KERNEL_CONFIG_FEATURES can provide a default set of config fragments.
+# KERNEL_CONFIG_FRAGMENTS still takes explicit precedence when set.
+if [[ "${KERNEL_STAGE_MODE}" == "fragment" ]] && [[ -z "${KERNEL_CONFIG_FRAGMENTS:-}" ]]; then
+  if [[ -n "${KERNEL_CONFIG_FEATURES:-}" ]]; then
+    KERNEL_CONFIG_FRAGMENTS="${KERNEL_CONFIG_FEATURES}"
+  elif [[ "${KERNEL_MODEL}" =~ ^(pi5|cm5)$ ]]; then
+    KERNEL_CONFIG_FRAGMENTS="${STAGE_DIR}/configs/pi5-network-tuning.conf"
+  fi
 fi
 if [[ -n "${KERNEL_CONFIG_FRAGMENTS:-}" ]]; then
   # Resolve relative fragment paths before the helper switches into the kernel tree.
@@ -173,6 +180,9 @@ case "${KERNEL_STAGE_MODE}" in
       --llvm "${KERNEL_LLVM}"
     )
 
+    if [[ -n "${KERNEL_CONFIG_FEATURES:-}" ]]; then
+      BUILD_CMD+=(--config-features "${KERNEL_CONFIG_FEATURES}")
+    fi
     if [[ "${KERNEL_STAGE_MODE}" == "fragment" && -n "${KERNEL_CONFIG_FRAGMENTS:-}" ]]; then
       BUILD_CMD+=(--config-fragments "${KERNEL_CONFIG_FRAGMENTS}")
     fi
