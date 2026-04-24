@@ -267,9 +267,13 @@ The `stage-kernel` allows you to include a custom kernel in your image. The reco
 
    Optional override for the base defconfig used by `fragment` mode.
 
+ * `KERNEL_CONFIG_FEATURES` (Default: unset)
+
+   Space-separated list of config fragment paths that act as the default feature set for `fragment` mode. When `KERNEL_CONFIG_FRAGMENTS` is not explicitly set, the stage falls back to `KERNEL_CONFIG_FEATURES`. This lets the caller control features at a higher level while still allowing direct fragment overrides.
+
  * `KERNEL_CONFIG_FRAGMENTS` (Default: Pi 5/CM5 uses `stage-kernel/configs/pi5-network-tuning.conf`)
 
-   Space-separated list of kernel config fragments to merge on top of the base defconfig in `fragment` mode.
+   Space-separated list of kernel config fragments to merge on top of the base defconfig in `fragment` mode. Takes precedence over `KERNEL_CONFIG_FEATURES` when explicitly set.
 
  * `KERNEL_CONFIG_FILE` (Default: unset)
 

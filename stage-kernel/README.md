@@ -21,8 +21,10 @@
   Selects the Raspberry Pi family defaults. `pi5` and `cm5` default to `bcm2712_defconfig`.
 - `KERNEL_DEFCONFIG`
   Optional override for the base defconfig used before fragment merge.
+- `KERNEL_CONFIG_FEATURES`
+  Space-separated list of config fragment paths that act as the default feature set. In `fragment` mode, when `KERNEL_CONFIG_FRAGMENTS` is not explicitly set, the stage falls back to `KERNEL_CONFIG_FEATURES`. This lets callers control features at a higher level (e.g. from `pi-gen/config`) while still allowing direct fragment overrides.
 - `KERNEL_CONFIG_FRAGMENTS`
-  Space-separated list of config fragments for `fragment` mode. Absolute paths are used as-is; relative paths are resolved from the `pi-gen` checkout before the stage enters the kernel source tree. If unset for `pi5/cm5`, the stage defaults to [`configs/pi5-network-tuning.conf`](./configs/pi5-network-tuning.conf).
+  Space-separated list of config fragments for `fragment` mode. Takes precedence over `KERNEL_CONFIG_FEATURES` when explicitly set. Absolute paths are used as-is; relative paths are resolved from the `pi-gen` checkout before the stage enters the kernel source tree. If neither `KERNEL_CONFIG_FEATURES` nor `KERNEL_CONFIG_FRAGMENTS` is set for `pi5/cm5`, the stage defaults to [`configs/pi5-network-tuning.conf`](./configs/pi5-network-tuning.conf).
 - `KERNEL_CONFIG_FILE`
   Full kernel config file to apply before the build starts in `config-file` mode. Relative paths are resolved from the `pi-gen` checkout.
 - `KERNEL_LLVM`
@@ -37,6 +39,9 @@ export STAGE_LIST="stage0 stage1 stage2 stage-kernel"
 export KERNEL_STAGE_MODE="fragment"
 export KERNEL_SRC="/home/whatshu/develop/project/raspi/linux"
 export KERNEL_MODEL="pi5"
+# Option 1: use a feature list (build.sh defaults apply when unset)
+export KERNEL_CONFIG_FEATURES="stage-kernel/configs/pi5-network-tuning.conf"
+# Option 2: explicit fragments (takes precedence over features)
 export KERNEL_CONFIG_FRAGMENTS="stage-kernel/configs/pi5-network-tuning.conf"
 ```
 
